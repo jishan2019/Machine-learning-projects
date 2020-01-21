@@ -1,0 +1,516 @@
+---
+title: "Project"
+author: "Erdoo Segher"
+date: "December 1, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# general visualisation
+library('ggplot2') # visualisation
+library('scales') # visualisation
+library('grid') # visualisation
+library('ggthemes') # visualisation
+library('gridExtra') # visualisation
+library('RColorBrewer') # visualisation
+library('corrplot') # visualisation
+
+# general data manipulation
+library('dplyr') # data manipulation
+library('readr') # input/output
+library('data.table') # data manipulation
+library('tibble') # data wrangling
+library('tidyr') # data wrangling
+library('stringr') # string manipulation
+library('forcats') # factor manipulation
+library('rlang') # data manipulation
+library(pls)
+library(verification)
+
+# specific visualisation
+library('alluvial') # visualisation
+library('ggfortify') # visualisation
+library('ggrepel') # visualisation
+library('ggridges') # visualisation
+library('VIM') # NAs
+library('plotly') # interactive
+library('ggforce') # visualisation
+
+# modelling
+library('ggforce') # modelling
+library('caret') # modelling
+library('MLmetrics') # gini metric
+library(xgboost)
+library(adabag)        # for boosting
+library(ipred)         # for bagging and error estimation
+library(randomForest)  # for Random Forests
+library(caret)         # for training and modeling
+library(MASS)          # to obtain the sample data set "Glass"
+library(mice)
+library(e1071)
+
+```
+
+
+```{r}
+getwd()
+train<- read.csv("train.csv")
+head(train)
+#View(train)
+#aggr_plot <- aggr(train, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+#marginplot(train[c(1,2)])
+
+#return information on all features regarding zero variance and near-zero variance 
+nzv<-data.frame(nearZeroVar(train, saveMetrics = T))#diagnosing predictors that have one unique value or very few unique values
+nzv[nzv$nzv!=FALSE,]#reviewing column names that have few unique values
+(colIDs<-nearZeroVar(train))
+apply(train[,colIDs],2,table)
+
+
+#remove data with majority with near-zero variance 
+train<-subset(train, select=-c(id,ps_ind_05_cat,ps_ind_10_bin, ps_ind_11_bin, ps_ind_12_bin, ps_ind_13_bin, ps_ind_14,ps_reg_03,ps_car_10_cat  ))
+
+
+```
+
+Find missing values, that is, cols that have -1 as a data value
+```{r}
+train[train == -1] <- NA #missing values are -1 in dataset set, so set to NA for easy manipulation
+na_count <-sapply(train, function(y) sum(length(which(is.na(y)))))#reviweing all the NA values by column
+missingValues<-data.frame(na_count[na_count>=1])#putting it in a data frame for a better visual; 
+missingValues
+aggr_plot <- aggr(train, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+marginplot(train[c(1,2)])
+```
+
+```{r}
+# Imputing with the mean 
+train1 =train
+for(i in 1:ncol(train1)){
+  train1[is.na(train1[,i]), i] <- mean(train1[,i], na.rm = TRUE)
+}
+aggr_plot <- aggr(train1, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+```
+
+
+
+```{r}
+#exploring the attribute distribution and outliers
+#reviewing boxplots forthe atributes
+for (i in c(2:ncol(train1)))
+{
+  boxplot(train1[,i],main=paste(colnames(train1)[i]))
+  }
+```
+
+```{r}
+#exploring theattributes' distributions
+for(i in c(2:ncol(train1)))
+  {
+  plot(density(train1[,i]),main=paste(colnames(train1)[i]))
+  polygon(density(train1[,i]), col="cadetblue4")
+  }
+```
+
+PCA of train data
+```{r}
+#principal component analysis
+pca_Train =prcomp(train1, scale. = TRUE)
+#pca_Train
+summary(pca_Train)
+plot(pca_Train, type = 'l')
+
+
+```
+Values of -1 from the dataset indicate that the feature was missing from the observation. The data description mentions that the names of the features indicate whether they are binary (bin) or categorical (cat) variables. Everything else is continuous or ordinal. We have already been told by Adriano Moala that the names of the variables indicate certain properties: *Ind" is related to individual or driver, "reg" is related to region, "car" is related to car itself and "calc" is a calculated feature.  In this project, we will treat these properties as groups.
+```{r}
+colName <- colnames(train1)
+data.frame(colName)
+
+```
+
+
+
+```{r}
+train2 =train
+catVars<- data.frame(train2$ps_ind_02_cat,
+train2$ps_ind_04_cat,
+train2$ps_ind_06_bin,
+train2$ps_ind_07_bin,
+train2$ps_ind_08_bin,
+train2$ps_ind_09_bin,
+train2$ps_ind_16_bin,
+train2$ps_ind_17_bin,
+train2$ps_ind_18_bin,
+train2$ps_car_01_cat,
+train2$ps_car_02_cat,
+train2$ps_car_03_cat,
+train2$ps_car_04_cat,
+train2$ps_car_05_cat,
+train2$ps_car_06_cat,
+train2$ps_car_07_cat,
+train2$ps_car_08_cat,
+train2$ps_car_09_cat,
+train2$ps_car_11_cat,
+train2$ps_calc_15_bin,
+train2$ps_calc_16_bin,
+train2$ps_calc_17_bin,
+train2$ps_calc_18_bin,
+train2$ps_calc_19_bin,
+train2$ps_calc_20_bin,
+train2$ps_ind_02_cat,
+train2$ps_ind_04_cat,
+train2$ps_ind_06_bin,
+train2$ps_ind_07_bin,
+train2$ps_ind_08_bin,
+train2$ps_ind_09_bin,
+train2$ps_ind_16_bin,
+train2$ps_ind_17_bin,
+train2$ps_ind_18_bin,
+train2$ps_car_01_cat,
+train2$ps_car_02_cat,
+train2$ps_car_03_cat,
+train2$ps_car_04_cat,
+train2$ps_car_05_cat,
+train2$ps_car_06_cat,
+train2$ps_car_07_cat,
+train2$ps_car_08_cat,
+train2$ps_car_09_cat,
+train2$ps_car_11_cat,
+train2$ps_calc_15_bin,
+train2$ps_calc_16_bin,
+train2$ps_calc_17_bin,
+train2$ps_calc_18_bin,
+train2$ps_calc_19_bin,
+train2$ps_calc_20_bin)
+
+#remove the coln names
+head(catVars)
+
+collVars <- cor(catVars)
+col<- colorRampPalette(c("blue", "white", "red"))(20)
+heatmap(x = collVars, col = col, symm = TRUE)
+
+```
+Non categorical Variables
+```{r}
+nonCatVars<- data.frame(
+ train2$ps_calc_11,			
+ train2$ps_calc_12,				
+ train2$ps_calc_13,				
+ train2$ps_calc_14,
+ train2$ps_reg_01,				
+ train2$ps_reg_02,
+ train2$ps_car_11,				
+ train2$ps_car_12,				
+ train2$ps_car_13,				
+ train2$ps_car_14,				
+ train2$ps_car_15,
+ train2$ps_calc_01,				
+ train2$ps_calc_02,		
+ train2$ps_calc_03,				
+ train2$ps_calc_04,		
+ train2$ps_calc_05,			
+ train2$ps_calc_06,				
+ train2$ps_calc_07,				
+ train2$ps_calc_08,				
+ train2$ps_calc_09,				
+ train2$ps_calc_10,
+ train2$ps_calc_11,				
+ train2$ps_calc_12,				
+ train2$ps_calc_13,				
+ train2$ps_calc_14)
+
+# Find correlation between non categorical variables
+cor(catVariables[,unlist(lapply(catVariables, is.numeric))])
+corrNonVars <- cor(nonCatVars)
+col<- colorRampPalette(c("blue", "white", "red"))(20)
+heatmap(x = corrNonVars, col = col, symm = TRUE)
+```
+Plot variables that corrolate in non categorical data
+```{r}
+library(ggplot2)
+ggplot(train2, aes(x=ps_car_15, y=ps_car_13)) + 
+  geom_point()+
+  geom_smooth(method=lm)
+
+ggplot(train2, aes(x=ps_car_14, y=ps_car_12)) + 
+  geom_point()+
+  geom_smooth(method=lm)
+
+
+
+```
+remove variable that corrolates
+```{r}
+train2 <-subset(train2, select=-c(ps_car_13, ps_car_12))
+train1 <-subset(train1, select=-c(ps_car_13, ps_car_12))
+```
+
+
+factor binary variables and categorical variables 
+```{r}
+train1$ps_ind_02_cat<- as.factor(train1$ps_ind_02_cat)
+train1$ps_ind_04_cat<- as.factor(train1$ps_ind_04_cat)
+train1$ps_ind_06_bin<- as.factor(train1$ps_ind_06_bin)
+train1$ps_ind_07_bin<- as.factor(train1$ps_ind_07_bin)
+train1$ps_ind_08_bin<- as.factor(train1$ps_ind_08_bin)
+train1$ps_ind_09_bin<- as.factor(train1$ps_ind_09_bin)
+train1$ps_ind_16_bin<- as.factor(train1$ps_ind_16_bin)
+train1$ps_ind_17_bin<- as.factor(train1$ps_ind_17_bin)
+train1$ps_ind_18_bin<- as.factor(train1$ps_ind_18_bin)
+train1$ps_car_01_cat<- as.factor(train1$ps_car_01_cat)
+train1$ps_car_02_cat<- as.factor(train1$ps_car_02_cat)
+train1$ps_car_03_cat<- as.factor(train1$ps_car_03_cat)
+train1$ps_car_04_cat<- as.factor(train1$ps_car_04_cat)
+train1$ps_car_05_cat<- as.factor(train1$ps_car_05_cat)
+train1$ps_car_06_cat<- as.factor(train1$ps_car_06_cat)
+train1$ps_car_07_cat<- as.factor(train1$ps_car_07_cat)
+train1$ps_car_08_cat<- as.factor(train1$ps_car_08_cat)
+train1$ps_car_09_cat<- as.factor(train1$ps_car_09_cat)
+train1$ps_car_11_cat<- as.factor(train1$ps_car_11_cat)
+train1$ps_calc_15_bin<- as.factor(train1$ps_calc_15_bin)
+train1$ps_calc_16_bin<- as.factor(train1$ps_calc_16_bin)
+train1$ps_calc_17_bin<- as.factor(train1$ps_calc_17_bin)
+train1$ps_calc_18_bin<- as.factor(train1$ps_calc_18_bin)
+train1$ps_calc_19_bin<- as.factor(train1$ps_calc_19_bin)
+train1$ps_calc_20_bin<- as.factor(train1$ps_calc_20_bin)
+
+
+```
+
+```{r}
+#logistic regression model
+fit <- glm(data=train1, target ~ ., family="binomial")
+summary(fit)
+
+#remove variables that are insignificant
+train1_NonSig <-subset(train1, 
+                       select=-c(ps_calc_01, ps_ind_15, ps_calc_02, 
+                                 ps_calc_03, ps_calc_04, ps_calc_05, ps_calc_06,  
+                                 ps_calc_07, ps_calc_08,ps_calc_09,    
+                                 ps_calc_10, ps_calc_11, ps_calc_12, ps_calc_13, 
+                                 ps_calc_14,ps_ind_09_bin, 
+                                 ps_ind_04_cat,ps_ind_06_bin, ps_car_05_cat,
+                                 ps_car_06_cat,ps_car_11_cat, ps_car_14,  
+                                 ps_calc_15_bin, ps_calc_16_bin, ps_calc_17_bin, 
+                                 ps_calc_18_bin,
+                                 ps_calc_19_bin, ps_calc_20_bin, ps_ind_02_cat,
+                                 ps_car_01_cat, ps_car_02_cat, ps_car_03_cat,ps_car_07_cat,
+                                 ps_car_09_cat))
+
+# rerun glm model without the LESS significant variables
+fit2 <- glm(data=train1_NonSig, target ~ ., family="binomial")
+summary(fit2)
+
+str(train1)
+
+#predict 
+pred <- predict(fit2, newdata = train1_NonSig, type = "response")
+head(pred)
+pred1 <- ifelse(pred > 0.5, 1,0)
+
+tab1 <- table (Predicted = pred1, Actual = train1_NonSig$target)
+tab1
+# or the confustion matrix function and assessment metrics we have seen before
+confusionMatrix(as.factor(fit2$fitted.values>0.5), as.factor(fit2$y==1))
+train1_NonSig$pred<-as.numeric(fit2$fitted.values>0.5)
+head(train1_NonSig)
+
+CrossTable(fit2$fitted.values, fit2$y, chisq=T, prop.chisq = T)
+
+# one semi-fancy SAS-like cross tabulation function
+library(gmodels)
+CrossTable(train1_NonSig$pred, train1_NonSig$target, chisq=T)
+
+
+library(ROCR) 
+pred <- prediction(fit2$fitted, fit2$y)    #ROC curve for training data
+perf <- performance(pred,"tpr","fpr") 
+plot(perf,colorize=TRUE, print.cutoffs.at = c(0.25,0.5,0.75)); 
+abline(0, 1, col="red")
+
+# can also look at cutoff based on different cost structure
+perf <- performance(pred, "cost", cost.fp=1, cost.fn=5)
+plot(perf); 
+
+# can also plot accuracy by average cutoff level 
+perf <- performance(pred, "acc")
+plot(perf, avg= "vertical",  
+     spread.estimate="boxplot", 
+     show.spread.at= seq(0.1, 0.9, by=0.1))
+
+#residuals
+pearsonRes <-residuals(fit2,type="pearson")
+devianceRes <-residuals(fit2,type="deviance")
+rawRes <-residuals(fit2,type="response")
+studentDevRes<-rstudent(fit2)
+fv<-fitted(fit2)
+
+#dataframe of target variable, predicted variable and residuals
+predVals <- data.frame(trueVal=train1_NonSig$target, predClass=train1_NonSig$pred, predProb=fv, rawRes, pearsonRes, devianceRes, studentDevRes)
+tail(predVals)
+
+
+#Plots from model
+plot(studentDevRes) 
+barplot(studentDevRes)
+plot(predict(fit2),residuals(fit2))  #plot predicted value vs residuals
+abline(h=0,lty=2,col="grey")
+# There is nothing outstanding from this graph. 
+# If we want to understand what is going on, we can run a local regression
+rl=loess(residuals(fit2)~predict(fit2))
+X<-data.frame(yHat=rl$x,predictedR=rl$fitted)
+X<-X[order(X[,1]),]
+lines(X,col="black",lwd=1)
+
+#standard plots available for logistic regression
+plot(fit2)
+#now let's look at leverage and influence
+barplot(cooks.distance(fit2))
+influence.measures(fit2)
+#now let's look at leverage and influence
+library(car)
+influencePlot(fit2)
+vif(fit2)
+
+
+dim(train1_NonSig)
+
+```
+
+```{
+```{r}
+#predict 
+getwd()
+test<- read.csv("test.csv")
+head(test)
+
+test1 =test
+test1[test1== -1] <- NA #missing values are -1 in dataset set, so set to NA for easy manipulation
+for(i in 1:ncol(test1)){
+  test1[is.na(test1[,i]), i] <- mean(test1[,i], na.rm = TRUE)
+}
+test1<-subset(test1, select=-c(id))
+
+test1$ps_ind_02_cat<- as.factor(test1$ps_ind_02_cat)
+test1$ps_ind_04_cat<- as.factor(test1$ps_ind_04_cat)
+test1$ps_ind_06_bin<- as.factor(test1$ps_ind_06_bin)
+test1$ps_ind_07_bin<- as.factor(test1$ps_ind_07_bin)
+test1$ps_ind_08_bin<- as.factor(test1$ps_ind_08_bin)
+test1$ps_ind_09_bin<- as.factor(test1$ps_ind_09_bin)
+test1$ps_ind_16_bin<- as.factor(test1$ps_ind_16_bin)
+test1$ps_ind_17_bin<- as.factor(test1$ps_ind_17_bin)
+test1$ps_ind_18_bin<- as.factor(test1$ps_ind_18_bin)
+test1$ps_car_01_cat<- as.factor(test1$ps_car_01_cat)
+test1$ps_car_02_cat<- as.factor(test1$ps_car_02_cat)
+test1$ps_car_03_cat<- as.factor(test1$ps_car_03_cat)
+test1$ps_car_04_cat<- as.factor(test1$ps_car_04_cat)
+test1$ps_car_05_cat<- as.factor(test1$ps_car_05_cat)
+test1$ps_car_06_cat<- as.factor(test1$ps_car_06_cat)
+test1$ps_car_07_cat<- as.factor(test1$ps_car_07_cat)
+test1$ps_car_08_cat<- as.factor(test1$ps_car_08_cat)
+test1$ps_car_09_cat<- as.factor(test1$ps_car_09_cat)
+test1$ps_car_11_cat<- as.factor(test1$ps_car_11_cat)
+test1$ps_calc_15_bin<- as.factor(test1$ps_calc_15_bin)
+test1$ps_calc_16_bin<- as.factor(test1$ps_calc_16_bin)
+test1$ps_calc_17_bin<- as.factor(test1$ps_calc_17_bin)
+test1$ps_calc_18_bin<- as.factor(test1$ps_calc_18_bin)
+test1$ps_calc_19_bin<- as.factor(test1$ps_calc_19_bin)
+test1$ps_calc_20_bin<- as.factor(test1$ps_calc_20_bin)
+
+test1 <-subset(test1, 
+                       select=-c(ps_calc_01, ps_ind_15, ps_calc_02, 
+                                 ps_calc_03, ps_calc_04, ps_calc_05, ps_calc_06,  
+                                 ps_calc_07, ps_calc_08,ps_calc_09,    
+                                 ps_calc_10, ps_calc_11, ps_calc_12, ps_calc_13, 
+                                 ps_calc_14,ps_ind_09_bin, 
+                                 ps_ind_04_cat,ps_ind_06_bin, ps_car_05_cat,
+                                 ps_car_06_cat,ps_car_11_cat, ps_car_14,  
+                                 ps_calc_15_bin, ps_calc_16_bin, ps_calc_17_bin, 
+                                 ps_calc_18_bin,
+                                 ps_calc_19_bin, ps_calc_20_bin, ps_ind_02_cat,
+                                 ps_car_01_cat, ps_car_02_cat, ps_car_03_cat,ps_car_07_cat,
+                                 ps_car_09_cat))
+
+
+
+predTest<- predict(fit2, newdata = test1, type = "response")
+head(predTest)
+test1$target=predTest
+head(test1)
+write.csv(predTest, file = "logisticReg1.csv")
+dim (test1)
+
+
+head(sampletest1)
+predGLM = factor(predTest, levels = levels(train1_NonSig$pred))
+confusionMatrix((as.factor(pred)),as.factor((sampletest1$target)))
+
+```
+
+
+
+bagging
+```{r}
+trainb <- train1
+head(trainb)
+subtrain <- trainb[1:10000,]
+fit3 <- bagging(target ~ ., data = subtrain, coob = T)  #coob=T --> compute oob error estimate
+fit3
+
+test<- read.csv("test.csv")
+head(test)
+
+test2 =test
+test2[test2== -1] <- NA #missing values are -1 in dataset set, so set to NA for easy manipulation
+for(i in 1:ncol(test2)){
+  test2[is.na(test1[,i]), i] <- mean(test2[,i], na.rm = TRUE)
+}
+test2<-subset(test2, select=-c(id))
+subtest <- test2[1:200000,]
+
+predBag = predict(fit3, newdata=subtest)
+subtrain$predict <-predBag
+
+predBag1 = predict(fit3, newdata=test2)
+subtest$predict <-predBag1
+
+
+View(test)
+head(predBag)
+write.csv(predBag1, file = "bagging.csv")
+
+
+predBag1 = factor(predBag, levels = levels(trainb$target))
+confusionMatrix(as.factor(predBag), as.factor(subtrain$predict))
+confusionMatrix(as.factor(predBag1), as.factor(subtrain$predict))
+CrossTable(subtrain$target, subtest$predict  )
+
+
+```
+
+svmRadial
+```{r}
+trainb <- train1
+head(trainb)
+subtrain <- trainb[1:10000,]
+set.seed(4520)
+grid <- expand.grid(sigma = seq(1.0,2.5,length=15),
+                    C = seq(3,9,length=15))
+
+svm.tune <- train(data=subtrain, 
+                  target~.,
+                  method = "svmRadial", 
+                  preProc = c("center","scale"),
+                  tuneGrid = grid,
+                  trControl=ctrl)
+
+svm.tune
+```
+
+
